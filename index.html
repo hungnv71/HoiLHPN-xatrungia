@@ -77,7 +77,17 @@
     padding:8px 10px; margin-bottom:6px; font-size:13.5px;
   }
   .activity-list li .txt{flex:1; line-height:1.4;}
+  .activity-list li .actions{display:flex; gap:2px; flex-shrink:0;}
+  .activity-list li .edit-btn{background:none; border:none; color:var(--blue-deep); font-size:14px; cursor:pointer; padding:0 4px;}
   .activity-list li .del{background:none; border:none; color:#B84B4E; font-size:15px; cursor:pointer; padding:0 2px;}
+  .activity-list li.editing{background:var(--white); border:1.5px solid var(--gold); flex-wrap:wrap;}
+  .edit-inline-input{
+    flex:1; min-width:120px; border:1.5px solid var(--blue-soft); border-radius:8px; padding:6px 9px;
+    font-family:var(--font-body); font-size:13.5px;
+  }
+  .edit-inline-input:focus{outline:none; border-color:var(--blue);}
+  .save-edit-btn{background:var(--blue-deep); color:var(--white); border:none; border-radius:8px; padding:5px 11px; font-size:12.5px; font-weight:700; cursor:pointer;}
+  .cancel-edit-btn{background:none; border:none; color:var(--ink-soft); font-size:12.5px; cursor:pointer; padding:5px 6px;}
   .add-row{display:flex; gap:8px;}
   .add-row input{
     flex:1; border:1.5px solid var(--blue-soft); border-radius:10px; padding:10px 12px; font-size:13.5px;
@@ -195,6 +205,10 @@ async function renderPicker(){
   });
 }
 
+function escapeHtml(s){
+  return String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
 async function getXuatSacCount(){
   const { data } = await supabase.from('hoi_settings').select('value').eq('key','xuatsac_count').maybeSingle();
   return data ? parseInt(data.value,10) || 3 : 3;
@@ -264,7 +278,7 @@ function renderForm(donvi){
       document.getElementById(`score_${f[0]}`).textContent = `${catScore} điểm`;
       document.getElementById(`score_${f[0]}`).className = 'cat-score' + (catScore===0?' zero':'');
       document.getElementById(`list_${f[0]}`).innerHTML = rows.map(r=>`
-        <li><span class="txt">${r.noi_dung}</span><button class="del" data-id="${r.id}" data-cat="${f[0]}">✕</button></li>`).join('');
+        <li data-id="${r.id}"><span class="txt">${escapeHtml(r.noi_dung)}</span><div class="actions"><button class="edit-btn" data-id="${r.id}" data-cat="${f[0]}" title="Sửa">✏️</button><button class="del" data-id="${r.id}" data-cat="${f[0]}" title="Xóa">✕</button></div></li>`).join('');
     });
     document.getElementById('totalScore').textContent = total;
 
@@ -302,8 +316,31 @@ function renderForm(donvi){
     });
     document.querySelectorAll('.del').forEach(btn=>{
       btn.onclick = async ()=>{
+        if(!confirm('Xóa việc này?')) return;
         await supabase.from('hoi_hoatdong').delete().eq('id', btn.dataset.id);
         loadMonth();
+      };
+    });
+    document.querySelectorAll('.edit-btn').forEach(btn=>{
+      btn.onclick = ()=>{
+        const li = document.querySelector(`li[data-id="${btn.dataset.id}"]`);
+        const currentText = li.querySelector('.txt').textContent;
+        li.classList.add('editing');
+        li.innerHTML = `
+          <input type="text" class="edit-inline-input" value="${escapeHtml(currentText)}">
+          <button class="save-edit-btn">Lưu</button>
+          <button class="cancel-edit-btn">Hủy</button>`;
+        const inp = li.querySelector('.edit-inline-input');
+        inp.focus();
+        const save = async ()=>{
+          const val = inp.value.trim();
+          if(!val) return;
+          await supabase.from('hoi_hoatdong').update({ noi_dung: val }).eq('id', btn.dataset.id);
+          loadMonth();
+        };
+        li.querySelector('.save-edit-btn').onclick = save;
+        li.querySelector('.cancel-edit-btn').onclick = ()=> loadMonth();
+        inp.onkeydown = (e)=>{ if(e.key==='Enter'){ e.preventDefault(); save(); } if(e.key==='Escape'){ loadMonth(); } };
       };
     });
   }
@@ -366,7 +403,7 @@ async function renderXaSummary(donvi){
       document.getElementById(`score_${f[0]}`).textContent = `${catScore} điểm`;
       document.getElementById(`score_${f[0]}`).className = 'cat-score' + (catScore===0?' zero':'');
       document.getElementById(`list_${f[0]}`).innerHTML = rows.map(r=>`
-        <li><span class="xa-item-src">[${nameMap[r.donvi_id]||'?'}]</span><span class="txt">${r.noi_dung}</span></li>`).join('');
+        <li><span class="xa-item-src">[${escapeHtml(nameMap[r.donvi_id]||'?')}]</span><span class="txt">${escapeHtml(r.noi_dung)}</span></li>`).join('');
     });
     document.getElementById('totalScore').textContent = total;
   }
