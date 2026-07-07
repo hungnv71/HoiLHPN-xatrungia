@@ -116,11 +116,18 @@
   .modal .item ul{margin:0; padding-left:0; font-size:13px; line-height:1.6; list-style:none;}
   .modal .item li{display:flex; align-items:flex-start; gap:6px; padding:3px 0;}
   .modal .item li .txt{flex:1;}
+  .modal .item li .val-tag{color:var(--blue-deep); font-weight:700; font-size:12px;}
   .modal .item li.editing{flex-wrap:wrap; background:var(--blue-pale); border-radius:8px; padding:6px 8px;}
   .modal .item .item-actions{display:flex; gap:2px; flex-shrink:0;}
   .modal .item .modal-edit, .modal .item .modal-del{background:none; border:none; font-size:12.5px; cursor:pointer; padding:0 3px; color:var(--blue-deep);}
   .modal .item .modal-del{color:#B84B4E;}
+  .point-hint{font-size:11.5px; color:var(--ink-soft); font-style:italic; margin:-4px 0 12px;}
+  .point-edit{flex-shrink:0;}
+  .point-input{width:42px; border:1.5px solid var(--gold); border-radius:6px; padding:2px 4px; font-size:12px; font-family:var(--font-body); text-align:center; color:var(--gold-deep); font-weight:700;}
   .modal-edit-input{flex:1; min-width:120px; border:1.5px solid var(--blue-soft); border-radius:8px; padding:5px 8px; font-family:var(--font-body); font-size:12.5px;}
+  .edit-value-row{display:flex; gap:6px; width:100%; margin-top:6px;}
+  .modal-edit-num{width:70px; border:1.5px solid var(--blue-soft); border-radius:8px; padding:5px 8px; font-family:var(--font-body); font-size:12px;}
+  .modal-edit-unit{flex:1; border:1.5px solid var(--blue-soft); border-radius:8px; padding:5px 8px; font-family:var(--font-body); font-size:12px;}
   .modal-save-btn{background:var(--blue-deep); color:var(--white); border:none; border-radius:8px; padding:4px 10px; font-size:12px; font-weight:700; cursor:pointer;}
   .modal-cancel-btn{background:none; border:none; color:var(--ink-soft); font-size:12px; cursor:pointer;}
   .modal .item .empty{color:#B7C4CB; font-style:italic; font-size:12.5px;}
@@ -178,8 +185,8 @@
 
     <div class="xa-card">
       <div>
-        <div class="xa-title">Hội LHPN xã (tự động cộng từ 16 chi hội)</div>
-        <div class="xa-sub">Không cần nhập tay — cộng dồn điểm của tất cả chi hội thôn trong tháng</div>
+        <div class="xa-title">Hội LHPN xã (16 chi hội + việc riêng của xã)</div>
+        <div class="xa-sub">Tự cộng dồn từ 16 chi hội, cộng thêm việc xã tự nhập riêng</div>
       </div>
       <div style="text-align:right">
         <div class="xa-num" id="xaTotal">–</div>
@@ -266,6 +273,10 @@ let donviList = [];
 let chihoiList = [];
 let monthChartInst = null;
 let yearChartInst = null;
+const MAX_FORWARD_OFFSET = (()=>{
+  const now = new Date();
+  return (2027 - now.getFullYear())*12 + (11 - now.getMonth());
+})();
 
 document.getElementById('passBtn').addEventListener('click', tryEnter);
 document.getElementById('passInput').addEventListener('keydown', e=>{ if(e.key==='Enter') tryEnter(); });
@@ -309,14 +320,14 @@ async function init(){
   const { data: setting } = await supabase.from('hoi_settings').select('value').eq('key','xuatsac_count').maybeSingle();
   const xsInput = document.getElementById('xsCount');
   xsInput.value = setting ? setting.value : Math.round(chihoiList.length*0.2);
-  document.getElementById('xsHint').textContent = `(gợi ý 20%: ~${Math.round(chihoiList.length*0.2)}/${chihoiList.length})`;
+  document.getElementById('xsHint').textContent = `(chị Hà chọn số đơn vị xuất sắc mỗi tháng, mặc định 4)`;
   xsInput.addEventListener('change', async ()=>{
     await supabase.from('hoi_settings').upsert({ key:'xuatsac_count', value:String(xsInput.value) });
     loadMonth();
   });
 
   document.getElementById('prevM').addEventListener('click', ()=>{ offset -= 1; loadMonth(); });
-  document.getElementById('nextM').addEventListener('click', ()=>{ if(offset<0){ offset += 1; loadMonth(); } });
+  document.getElementById('nextM').addEventListener('click', ()=>{ if(offset<MAX_FORWARD_OFFSET){ offset += 1; loadMonth(); } });
   document.getElementById('exportBtn').addEventListener('click', exportMonthExcel);
   document.getElementById('exportYearBtn').addEventListener('click', exportYearExcel);
   document.getElementById('exportWordBtn').addEventListener('click', exportMonthWord);
@@ -325,7 +336,8 @@ async function init(){
 
   const yearSel = document.getElementById('yearSelect');
   const curY = new Date().getFullYear();
-  for(let y=curY; y>=curY-3; y--){ const o=document.createElement('option'); o.value=y; o.textContent=y; yearSel.appendChild(o); }
+  for(let y=curY+1; y>=curY-3; y--){ const o=document.createElement('option'); o.value=y; o.textContent=y; yearSel.appendChild(o); }
+  yearSel.value = String(curY);
   yearSel.addEventListener('change', loadYear);
 
   loadMonth();
@@ -334,7 +346,7 @@ async function init(){
 async function loadMonth(){
   const mv = monthValue(offset);
   document.getElementById('monthLabel').textContent = `Tháng ${mv.m} · ${mv.y}`;
-  document.getElementById('nextM').disabled = offset >= 0;
+  document.getElementById('nextM').disabled = offset >= MAX_FORWARD_OFFSET;
   document.getElementById('tbodyMonth').innerHTML = `<tr><td colspan="6"><div class="loading">Đang tải…</div></td></tr>`;
 
   const { data: acts } = await supabase.from('hoi_hoatdong').select('*').eq('thang', mv.key);
@@ -370,7 +382,9 @@ function renderMonthTable(mv, acts){
   document.getElementById('statSubmitted').textContent = `${submitted}/${chihoiList.length}`;
   document.getElementById('statMissing').textContent = `${chihoiList.length-submitted}`;
   document.getElementById('statXuatSac').textContent = xuatsac;
-  document.getElementById('xaTotal').textContent = rows.reduce((s,r)=>s+r.score,0);
+  const xaDonvi = donviList.find(d=>d.is_xa);
+  const xaOwnScore = xaDonvi ? scoreFor(acts, xaDonvi.id) : 0;
+  document.getElementById('xaTotal').textContent = rows.reduce((s,r)=>s+r.score,0) + xaOwnScore;
 
   document.querySelectorAll('.btn-view').forEach(btn=>{
     btn.addEventListener('click', ()=> openModal(btn.dataset.donvi, acts));
@@ -406,7 +420,10 @@ function openModal(donviId, acts){
     const score = rows.reduce((s,r)=>s+r.diem,0);
     const list = rows.length ? `<ul>${rows.map(r=>`
       <li data-id="${r.id}">
-        <span class="txt">${escapeHtml(r.noi_dung)}</span>
+        <span class="txt">${escapeHtml(r.noi_dung)}${r.gia_tri!=null ? ` <span class="val-tag">(${r.gia_tri} ${escapeHtml(r.don_vi_tinh||'')})</span>` : ''}</span>
+        <span class="point-edit">
+          <input type="number" class="point-input" data-id="${r.id}" value="${r.diem}" min="0" step="1" title="Điểm">
+        </span>
         <span class="item-actions">
           <button class="modal-edit" data-id="${r.id}" data-donvi="${donviId}" title="Sửa">✏️</button>
           <button class="modal-del" data-id="${r.id}" data-donvi="${donviId}" title="Xóa">✕</button>
@@ -418,9 +435,19 @@ function openModal(donviId, acts){
     <button class="modal-close" onclick="document.getElementById('overlay').classList.remove('show')">✕</button>
     <h2>${escapeHtml(d.ten_don_vi)}</h2>
     <div class="who">${d.ten_truong ? 'Chi hội trưởng: '+escapeHtml(d.ten_truong) : ''}</div>
+    <p class="point-hint">Điểm mặc định 1 — có thể sửa cao hơn cho việc khó, quan trọng hơn.</p>
     ${items}`;
   document.getElementById('overlay').classList.add('show');
 
+  document.querySelectorAll('.point-input').forEach(inp=>{
+    inp.addEventListener('change', async ()=>{
+      const v = parseInt(inp.value,10);
+      if(isNaN(v) || v<0) return;
+      await supabase.from('hoi_hoatdong').update({ diem: v }).eq('id', inp.dataset.id);
+      await loadMonth();
+      openModal(donviId, window.__actsCache||[]);
+    });
+  });
   document.querySelectorAll('.modal-del').forEach(btn=>{
     btn.onclick = async ()=>{
       if(!confirm('Xóa việc này?')) return;
@@ -430,12 +457,19 @@ function openModal(donviId, acts){
     };
   });
   document.querySelectorAll('.modal-edit').forEach(btn=>{
-    btn.onclick = ()=>{
+    btn.onclick = async ()=>{
       const li = document.querySelector(`li[data-id="${btn.dataset.id}"]`);
-      const currentText = li.querySelector('.txt').textContent;
+      const { data: row } = await supabase.from('hoi_hoatdong').select('*').eq('id', btn.dataset.id).maybeSingle();
+      if(!row) return;
       li.classList.add('editing');
       li.innerHTML = `
-        <input type="text" class="modal-edit-input" value="${escapeHtml(currentText)}">
+        <div style="flex:1">
+          <input type="text" class="modal-edit-input" value="${escapeHtml(row.noi_dung)}">
+          <div class="edit-value-row">
+            <input type="number" step="any" class="modal-edit-num" placeholder="Giá trị" value="${row.gia_tri!=null?row.gia_tri:''}">
+            <input type="text" class="modal-edit-unit" placeholder="Đơn vị" value="${escapeHtml(row.don_vi_tinh||'')}">
+          </div>
+        </div>
         <button class="modal-save-btn">Lưu</button>
         <button class="modal-cancel-btn">Hủy</button>`;
       const inp = li.querySelector('.modal-edit-input');
@@ -443,7 +477,13 @@ function openModal(donviId, acts){
       const save = async ()=>{
         const val = inp.value.trim();
         if(!val) return;
-        await supabase.from('hoi_hoatdong').update({ noi_dung: val }).eq('id', btn.dataset.id);
+        const numV = li.querySelector('.modal-edit-num').value.trim();
+        const unitV = li.querySelector('.modal-edit-unit').value.trim();
+        await supabase.from('hoi_hoatdong').update({
+          noi_dung: val,
+          gia_tri: numV!==''? parseFloat(numV) : null,
+          don_vi_tinh: numV!=='' && unitV ? unitV : null
+        }).eq('id', btn.dataset.id);
         await loadMonth();
         openModal(btn.dataset.donvi, window.__actsCache||[]);
       };
@@ -478,7 +518,10 @@ async function exportMonthExcel(){
   const xsCount = parseInt(document.getElementById('xsCount').value,10) || 0;
   const rows = chihoiList.map(d=>({ d, score: scoreFor(acts,d.id), cnt: countFor(acts,d.id) })).sort((a,b)=>b.score-a.score);
   const threshold = xsCount>0 && rows.length ? rows[Math.min(xsCount,rows.length)-1].score : -1;
-  const xaScore = rows.reduce((s,r)=>s+r.score,0);
+  const chihoiTotal = rows.reduce((s,r)=>s+r.score,0);
+  const xaDonvi = donviList.find(d=>d.is_xa);
+  const xaOwnScore = xaDonvi ? scoreFor(acts, xaDonvi.id) : 0;
+  const xaScore = chihoiTotal + xaOwnScore;
 
   const headers = ['Hạng','Stt','Tên đơn vị','Chi hội trưởng', ...FIELDS.map(f=>f[1]), 'Tổng điểm','Xuất sắc'];
   const colCount = headers.length;
@@ -517,37 +560,49 @@ async function exportMonthExcel(){
   });
   headerRow.height = 48;
 
+  function actText(a){ return `- ${a.noi_dung}${a.gia_tri!=null?` (${a.gia_tri} ${a.don_vi_tinh||''})`:''}`; }
+
   rows.forEach((r,i)=>{
     const rowIdx = headerRowIdx + 1 + i;
     const isXs = xsCount>0 && r.score>0 && r.score>=threshold;
-    const catScores = FIELDS.map(f=> acts.filter(a=>a.donvi_id===r.d.id && a.category===f[0]).reduce((s,a)=>s+a.diem,0));
-    const rowVals = [i+1, r.d.stt, r.d.ten_don_vi, r.d.ten_truong||'', ...catScores, r.score, isXs?'★ Xuất sắc':''];
+    const catTexts = FIELDS.map(f=> acts.filter(a=>a.donvi_id===r.d.id && a.category===f[0]).map(actText).join('\n'));
+    const maxLines = Math.max(1, ...catTexts.map(t=> t ? t.split('\n').length : 1));
+    const rowVals = [i+1, r.d.stt, r.d.ten_don_vi, r.d.ten_truong||'', ...catTexts, r.score, isXs?'★ Xuất sắc':''];
     const row = ws.getRow(rowIdx);
     rowVals.forEach((v,idx)=>{
       const cell = row.getCell(idx+1);
       cell.value = v;
       cell.border = xThinBorder(XCOL.border);
-      const centered = !(idx===2 || idx===3);
-      cell.alignment = { horizontal: centered ? 'center':'left', vertical:'middle' };
-      cell.font = { name:'Calibri', size:10.5, bold: isXs || idx===2, color: isXs ? {argb:XCOL.goldDeep} : undefined };
+      const isCatCol = idx>=4 && idx<=4+FIELDS.length-1;
+      const centered = !(idx===2 || idx===3 || isCatCol);
+      cell.alignment = { horizontal: centered ? 'center':'left', vertical:'middle', wrapText: isCatCol };
+      cell.font = { name:'Calibri', size:9.5, bold: isXs || idx===2, color: isXs ? {argb:XCOL.goldDeep} : undefined };
       if(isXs){ cell.fill = { type:'pattern', pattern:'solid', fgColor:{argb:XCOL.goldSoft} }; }
       else if(i%2===1){ cell.fill = { type:'pattern', pattern:'solid', fgColor:{argb:XCOL.bluePale} }; }
     });
-    row.height = 18;
+    row.height = Math.min(220, Math.max(18, maxLines*14));
   });
 
+  // Dòng tổng của xã: tổng giá trị cùng đơn vị cộng dồn từ 16 chi hội + việc riêng của xã
   const xaRowIdx = headerRowIdx + 1 + rows.length + 1;
   ws.mergeCells(xaRowIdx,1,xaRowIdx,3);
   for(let c=1;c<=colCount;c++){
     const cell = ws.getCell(xaRowIdx,c);
     cell.fill = { type:'pattern', pattern:'solid', fgColor:{argb:XCOL.blueDeep} };
-    cell.font = { name:'Calibri', size:11, bold:true, color:{argb:XCOL.white} };
-    cell.alignment = { horizontal: c<=3 ? 'left':'center', vertical:'middle' };
+    cell.font = { name:'Calibri', size:10, bold:true, color:{argb:XCOL.white} };
+    cell.alignment = { horizontal: c<=3 ? 'left':'center', vertical:'middle', wrapText:true };
     cell.border = xThinBorder(XCOL.border);
   }
-  ws.getCell(xaRowIdx,1).value = 'Hội LHPN xã (tổng 16 chi hội)';
+  ws.getCell(xaRowIdx,1).value = 'Hội LHPN xã (tổng 16 chi hội + việc riêng của xã)';
+  FIELDS.forEach((f,ci)=>{
+    const chihoiActs = acts.filter(a=> chihoiList.some(d=>d.id===a.donvi_id) && a.category===f[0]);
+    const sums = {};
+    chihoiActs.forEach(a=>{ if(a.gia_tri!=null && a.don_vi_tinh){ sums[a.don_vi_tinh] = (sums[a.don_vi_tinh]||0) + Number(a.gia_tri); } });
+    const sumTxt = Object.entries(sums).map(([u,v])=>`Tổng: ${v} ${u}`).join('\n');
+    if(sumTxt) ws.getCell(xaRowIdx, CAT_START+ci).value = sumTxt;
+  });
   ws.getCell(xaRowIdx, COL_TOTAL).value = xaScore;
-  ws.getRow(xaRowIdx).height = 20;
+  ws.getRow(xaRowIdx).height = 30;
 
   ws.getColumn(1).width = 7;
   ws.getColumn(2).width = 6;
@@ -581,13 +636,14 @@ function renderYearTable(year, acts){
   });
 
   const chihoiRows = chihoiList.map(d=>({ d, months: monthScores(d.id) }));
-  const xaMonths = Array.from({length:12},(_,i)=> chihoiRows.reduce((s,r)=>s+r.months[i],0));
+  const xaDonvi = donviList.find(d=>d.is_xa);
+  const xaOwnMonths = xaDonvi ? monthScores(xaDonvi.id) : Array(12).fill(0);
+  const xaMonths = Array.from({length:12},(_,i)=> chihoiRows.reduce((s,r)=>s+r.months[i],0) + xaOwnMonths[i]);
 
   let html = '';
-  const xaDonvi = donviList.find(d=>d.is_xa);
   if(xaDonvi){
     html += `<tr style="background:var(--blue-soft); font-weight:700;">
-      <td>–</td><td>${xaDonvi.ten_don_vi} (tổng 16 chi hội)</td>
+      <td>–</td><td>${xaDonvi.ten_don_vi} (tổng 16 chi hội + việc riêng của xã)</td>
       ${xaMonths.map(m=>`<td>${m||''}</td>`).join('')}
       <td class="annual-total">${xaMonths.reduce((a,b)=>a+b,0)}</td></tr>`;
   }
@@ -632,7 +688,8 @@ async function exportYearExcel(){
     return { d, months, total: months.reduce((a,b)=>a+b,0) };
   }).sort((a,b)=>b.total-a.total);
   const threshold = xsCount>0 && rows.length ? rows[Math.min(xsCount,rows.length)-1].total : -1;
-  const xaMonths = Array.from({length:12},(_,i)=> rows.reduce((s,r)=>s+r.months[i],0));
+  const xaOwnMonths2 = xaDonvi ? monthScores(xaDonvi.id) : Array(12).fill(0);
+  const xaMonths = Array.from({length:12},(_,i)=> rows.reduce((s,r)=>s+r.months[i],0) + xaOwnMonths2[i]);
   const xaTotal = xaMonths.reduce((a,b)=>a+b,0);
 
   const headers = ['Hạng','Stt','Tên đơn vị', ...Array.from({length:12},(_,i)=>`Th.${i+1}`), 'Tổng năm'];
@@ -669,7 +726,7 @@ async function exportYearExcel(){
   ws.getRow(headerRowIdx).height = 30;
 
   const xaRowIdx = headerRowIdx+1;
-  const xaVals = ['–','–', `${xaDonvi?xaDonvi.ten_don_vi:'Hội LHPN xã'} (tổng 16 chi hội)`, ...xaMonths, xaTotal];
+  const xaVals = ['–','–', `${xaDonvi?xaDonvi.ten_don_vi:'Hội LHPN xã'} (tổng 16 chi hội + việc riêng của xã)`, ...xaMonths, xaTotal];
   xaVals.forEach((v,idx)=>{
     const cell = ws.getRow(xaRowIdx).getCell(idx+1);
     cell.value = v;
@@ -821,7 +878,9 @@ async function exportMonthWord(){
   const threshold = xsCount>0 && rows.length ? rows[Math.min(xsCount,rows.length)-1].score : -1;
   const submitted = rows.filter(r=>r.score>0).length;
   const xuatsacRows = rows.filter(r=> xsCount>0 && r.score>0 && r.score>=threshold);
-  const xaScore = rows.reduce((s,r)=>s+r.score,0);
+  const xaDonvi = donviList.find(d=>d.is_xa);
+  const xaOwnScore = xaDonvi ? scoreFor(acts, xaDonvi.id) : 0;
+  const xaScore = rows.reduce((s,r)=>s+r.score,0) + xaOwnScore;
 
   const prevMv = monthValue(offset-1);
   const { data: prevActs } = await supabase.from('hoi_hoatdong').select('*').eq('thang', prevMv.key);
@@ -839,13 +898,20 @@ async function exportMonthWord(){
     </tr>`;
   }).join('');
 
-  const tieuBieu = xuatsacRows.map(r=>{
-    const rActs = acts.filter(a=>a.donvi_id===r.d.id);
-    const items = rActs.map(a=>{
-      const f = FIELDS.find(f=>f[0]===a.category);
-      return `<li>${escapeHtml(a.noi_dung)} <i>(${f?escapeHtml(f[1]):a.category})</i></li>`;
+  const chiTietTheoNoiDung = FIELDS.map((f,fi)=>{
+    const catActs = acts.filter(a=>a.category===f[0]);
+    if(!catActs.length) return `<p><b>${fi+1}. ${escapeHtml(f[1])}:</b> <i>Không có hoạt động trong tháng.</i></p>`;
+    const byDonvi = {};
+    catActs.forEach(a=>{ (byDonvi[a.donvi_id] = byDonvi[a.donvi_id]||[]).push(a); });
+    const items = Object.entries(byDonvi).map(([donviId, list])=>{
+      const dv = donviList.find(x=>x.id===donviId);
+      const name = dv ? dv.ten_don_vi : '?';
+      return list.map(a=> `<li><b>${escapeHtml(name)}</b>: ${escapeHtml(a.noi_dung)}${a.gia_tri!=null?` <i>(${a.gia_tri} ${escapeHtml(a.don_vi_tinh||'')})</i>`:''}</li>`).join('');
     }).join('');
-    return `<p><b>${escapeHtml(r.d.ten_don_vi)}</b> (${r.score} điểm):</p><ul>${items || '<li><i>Không có chi tiết</i></li>'}</ul>`;
+    const sums = {};
+    catActs.forEach(a=>{ if(a.gia_tri!=null && a.don_vi_tinh){ sums[a.don_vi_tinh] = (sums[a.don_vi_tinh]||0) + Number(a.gia_tri); } });
+    const sumLine = Object.entries(sums).map(([u,v])=>`Tổng cộng: <b>${v} ${escapeHtml(u)}</b>`).join(' · ');
+    return `<p><b>${fi+1}. ${escapeHtml(f[1])}</b></p><ul>${items}</ul>${sumLine?`<p style="margin-left:18px; font-style:italic;">${sumLine}</p>`:''}`;
   }).join('');
 
   const body = `
@@ -860,7 +926,7 @@ async function exportMonthWord(){
     <h2 class="sec">I. Tình hình chung</h2>
     <p>- Tổng số đơn vị trực thuộc: 17 (gồm Hội LHPN xã và 16 chi hội thôn).</p>
     <p>- Số chi hội có hoạt động trong tháng: ${submitted}/16 chi hội.</p>
-    <p>- Tổng điểm hoạt động toàn xã trong tháng: <b>${xaScore} điểm</b> (tự động cộng từ 16 chi hội).</p>
+    <p>- Tổng điểm hoạt động toàn xã trong tháng: <b>${xaScore} điểm</b> (tự động cộng từ 16 chi hội + việc riêng của xã).</p>
     <p>- Số chi hội đạt loại xuất sắc trong tháng: <b>${xuatsacRows.length} đơn vị</b> (chi tiết tại Mục III).</p>
 
     <h2 class="sec">II. Kết quả xếp hạng chi tiết</h2>
@@ -872,8 +938,8 @@ async function exportMonthWord(){
     <h2 class="sec">III. Danh sách chi hội đạt xuất sắc</h2>
     ${xuatsacRows.length ? `<p>${xuatsacRows.map(r=>`${escapeHtml(r.d.ten_don_vi)} (${r.score} điểm)`).join('; ')}.</p>` : '<p><i>Chưa có đơn vị đạt xuất sắc trong tháng này.</i></p>'}
 
-    <h2 class="sec">IV. Hoạt động tiêu biểu của các đơn vị xuất sắc</h2>
-    ${tieuBieu || '<p><i>Chưa có dữ liệu.</i></p>'}
+    <h2 class="sec">IV. Chi tiết hoạt động theo từng nội dung (toàn xã)</h2>
+    ${chiTietTheoNoiDung}
 
     <h2 class="sec">V. Phân tích, nhận xét (tự động theo số liệu)</h2>
     ${phanTich}
@@ -907,7 +973,8 @@ function exportYearWord(){
   const chihoiRows = chihoiList.map(d=>({ d, months: monthScores(d.id), total: 0 }));
   chihoiRows.forEach(r=> r.total = r.months.reduce((a,b)=>a+b,0));
   chihoiRows.sort((a,b)=>b.total-a.total);
-  const xaMonths = Array.from({length:12},(_,i)=> chihoiRows.reduce((s,r)=>s+r.months[i],0));
+  const xaOwnMonths3 = xaDonvi ? monthScores(xaDonvi.id) : Array(12).fill(0);
+  const xaMonths = Array.from({length:12},(_,i)=> chihoiRows.reduce((s,r)=>s+r.months[i],0) + xaOwnMonths3[i]);
   const xaTotal = xaMonths.reduce((a,b)=>a+b,0);
   const activeMonths = xaMonths.filter(m=>m>0).length;
 
@@ -942,14 +1009,14 @@ function exportYearWord(){
     <p class="subtitle">Kết quả hoạt động năm ${year} của các chi hội phụ nữ</p>
 
     <h2 class="sec">I. Tình hình chung</h2>
-    <p>- Tổng điểm hoạt động toàn xã trong năm ${year}: <b>${xaTotal} điểm</b> (tổng hợp từ 16 chi hội thôn).</p>
+    <p>- Tổng điểm hoạt động toàn xã trong năm ${year}: <b>${xaTotal} điểm</b> (tổng hợp từ 16 chi hội thôn + việc riêng của xã).</p>
     <p>- Số tháng có ghi nhận hoạt động: ${activeMonths}/12 tháng.</p>
     <p>- Ba chi hội có điểm cao nhất trong năm: ${top3 || '(chưa có dữ liệu)'}.</p>
 
     <h2 class="sec">II. Bảng tổng hợp điểm theo tháng</h2>
     <table>
       <tr><th>Stt</th><th>Tên đơn vị</th>${headCells}<th>Tổng năm</th></tr>
-      <tr style="background:#DCEEF5;"><td class="num">–</td><td><b>${escapeHtml(xaDonvi?xaDonvi.ten_don_vi:'Hội LHPN xã')} (tổng 16 chi hội)</b></td>${xaMonths.map(m=>`<td class="num">${m||''}</td>`).join('')}<td class="num"><b>${xaTotal}</b></td></tr>
+      <tr style="background:#DCEEF5;"><td class="num">–</td><td><b>${escapeHtml(xaDonvi?xaDonvi.ten_don_vi:'Hội LHPN xã')} (tổng 16 chi hội + việc riêng của xã)</b></td>${xaMonths.map(m=>`<td class="num">${m||''}</td>`).join('')}<td class="num"><b>${xaTotal}</b></td></tr>
       ${rowsHtml}
     </table>
 

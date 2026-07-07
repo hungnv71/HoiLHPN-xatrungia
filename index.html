@@ -48,6 +48,12 @@
     font-size:11px; font-weight:700; padding:3px 9px; border-radius:999px; margin-top:4px;
   }
 
+  .section-title{
+    margin:26px 22px 8px; font-family:var(--font-display); font-weight:700; font-size:16px; color:var(--navy);
+    display:flex; align-items:center; gap:8px;
+  }
+  .section-title .tag{font-size:11px; font-weight:700; background:var(--gold-soft); color:#8a6210; padding:2px 9px; border-radius:999px;}
+
   .month-nav{
     display:flex; align-items:center; justify-content:center; gap:18px; margin:14px 22px 6px;
     padding:10px 16px; background:var(--white); border-radius:999px; box-shadow:var(--shadow-sm); border:1px solid var(--blue-line);
@@ -71,12 +77,14 @@
     padding:3px 10px; white-space:nowrap; align-self:flex-start;
   }
   .cat-score.zero{background:#B9C9D1;}
+  .val-sum{font-size:12px; color:var(--gold); font-weight:700; margin:-2px 0 8px 36px;}
   .activity-list{list-style:none; margin:0 0 8px; padding:0;}
   .activity-list li{
     display:flex; align-items:flex-start; gap:8px; background:var(--blue-pale); border-radius:10px;
     padding:8px 10px; margin-bottom:6px; font-size:13.5px;
   }
   .activity-list li .txt{flex:1; line-height:1.4;}
+  .activity-list li .val-tag{color:var(--blue-deep); font-weight:700; font-size:12.5px;}
   .activity-list li .actions{display:flex; gap:2px; flex-shrink:0;}
   .activity-list li .edit-btn{background:none; border:none; color:var(--blue-deep); font-size:14px; cursor:pointer; padding:0 4px;}
   .activity-list li .del{background:none; border:none; color:#B84B4E; font-size:15px; cursor:pointer; padding:0 2px;}
@@ -86,6 +94,10 @@
     font-family:var(--font-body); font-size:13.5px;
   }
   .edit-inline-input:focus{outline:none; border-color:var(--blue);}
+  .edit-value-row{display:flex; gap:6px; width:100%; margin-top:6px;}
+  .edit-value-row input{border:1.5px solid var(--blue-soft); border-radius:8px; padding:6px 9px; font-family:var(--font-body); font-size:12.5px;}
+  .edit-value-row input.edit-num{width:70px;}
+  .edit-value-row input.edit-unit{flex:1;}
   .save-edit-btn{background:var(--blue-deep); color:var(--white); border:none; border-radius:8px; padding:5px 11px; font-size:12.5px; font-weight:700; cursor:pointer;}
   .cancel-edit-btn{background:none; border:none; color:var(--ink-soft); font-size:12.5px; cursor:pointer; padding:5px 6px;}
   .add-row{display:flex; gap:8px;}
@@ -99,6 +111,11 @@
     font-weight:700; font-size:13.5px; cursor:pointer;
   }
   .add-row button:disabled{background:#BCD3DB;}
+  .value-toggle{font-size:12px; color:var(--blue-deep); margin:8px 0 0; cursor:pointer; text-decoration:underline; display:inline-block;}
+  .value-row{display:none; gap:8px; margin-top:8px;}
+  .value-row.open{display:flex;}
+  .value-row input.value-num{width:80px; border:1.5px solid var(--blue-soft); border-radius:10px; padding:8px 10px; font-size:13px; font-family:var(--font-body);}
+  .value-row input.value-unit{flex:1; border:1.5px solid var(--blue-soft); border-radius:10px; padding:8px 10px; font-size:13px; font-family:var(--font-body);}
 
   .xa-note{
     margin:14px 22px; padding:14px 16px; background:var(--gold-soft); border-radius:14px; font-size:13px;
@@ -133,6 +150,15 @@
 </style>
 </head>
 <body>
+<datalist id="unit-suggestions">
+  <option value="triệu đồng"></option>
+  <option value="nghìn đồng"></option>
+  <option value="đồng"></option>
+  <option value="suất quà"></option>
+  <option value="người"></option>
+  <option value="hộ"></option>
+  <option value="kg gạo"></option>
+</datalist>
 <div id="app">
   <div class="loading">
     <svg class="spin" viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="9" stroke="currentColor" stroke-width="2" stroke-dasharray="30 20" stroke-linecap="round"/></svg>
@@ -167,6 +193,10 @@ const app = document.getElementById('app');
 const params = new URLSearchParams(location.search);
 const slug = params.get('donvi');
 
+function escapeHtml(s){
+  return String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+function fmtNum(n){ return new Intl.NumberFormat('vi-VN').format(n); }
 function monthValue(offset){
   const d = new Date(); d.setDate(1); d.setMonth(d.getMonth()+offset);
   return { key:`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`, m:d.getMonth()+1, y:d.getFullYear() };
@@ -181,7 +211,7 @@ async function boot(){
     app.innerHTML = `<div class="notice"><b>Không tìm thấy đơn vị.</b><br>Link này không đúng hoặc đã thay đổi. Vui lòng liên hệ Chị Hà để lấy lại đúng đường link của chi hội mình.</div>`;
     return;
   }
-  if(donvi.is_xa){ renderXaSummary(donvi); }
+  if(donvi.is_xa){ renderXaPage(donvi); }
   else { renderForm(donvi); }
 }
 
@@ -205,16 +235,12 @@ async function renderPicker(){
   });
 }
 
-function escapeHtml(s){
-  return String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
-}
-
 async function getXuatSacCount(){
   const { data } = await supabase.from('hoi_settings').select('value').eq('key','xuatsac_count').maybeSingle();
-  return data ? parseInt(data.value,10) || 3 : 3;
+  return data ? parseInt(data.value,10) || 4 : 4;
 }
 
-async function computeRanking(mv, excludeXaId){
+async function computeRanking(mv){
   const { data: chihoi } = await supabase.from('hoi_donvi').select('id').eq('is_xa', false);
   const ids = (chihoi||[]).map(d=>d.id);
   const { data: acts } = await supabase.from('hoi_hoatdong').select('donvi_id, diem').eq('thang', mv.key);
@@ -224,9 +250,137 @@ async function computeRanking(mv, excludeXaId){
   return { sorted, scoreMap };
 }
 
+/* ============ Form nhập việc (dùng cho chi hội & mục riêng của xã) ============ */
+function catCardsHtml(idPrefix){
+  return FIELDS.map((f,i)=>`
+    <div class="cat-card" data-cat="${f[0]}">
+      <div class="cat-head">
+        <div class="cat-num">${String(i+1).padStart(2,'0')}</div>
+        <div class="cat-label">${f[1]}</div>
+        <div class="cat-score zero" id="${idPrefix}score_${f[0]}">0 điểm</div>
+      </div>
+      <ul class="activity-list" id="${idPrefix}list_${f[0]}"></ul>
+      <div class="add-row">
+        <input type="text" id="${idPrefix}input_${f[0]}" placeholder="VD: đã tổ chức 1 buổi tuyên truyền tại thôn…">
+        <button data-cat="${f[0]}" class="add-btn">+ Thêm</button>
+      </div>
+      <div class="value-toggle" data-cat="${f[0]}">+ Giá trị/số lượng (nếu có)</div>
+      <div class="value-row" id="${idPrefix}valuerow_${f[0]}">
+        <input type="number" step="any" class="value-num" id="${idPrefix}value_${f[0]}" placeholder="Số">
+        <input type="text" class="value-unit" id="${idPrefix}unit_${f[0]}" list="unit-suggestions" placeholder="Đơn vị, VD: triệu đồng">
+      </div>
+    </div>`).join('');
+}
+
+/**
+ * Gắn toàn bộ tương tác nhập/sửa/xoá cho 1 donvi trong 1 khối cat-cards.
+ * idPrefix để phân biệt nhiều khối trên cùng 1 trang (VD trang xã có khối riêng).
+ */
+function mountEntryCards(container, donvi, idPrefix, getOffset, onAfterChange){
+  container.innerHTML = catCardsHtml(idPrefix);
+
+  container.querySelectorAll('.value-toggle').forEach(t=>{
+    t.addEventListener('click', ()=>{
+      const row = document.getElementById(`${idPrefix}valuerow_${t.dataset.cat}`);
+      row.classList.toggle('open');
+    });
+  });
+
+  async function loadInto(){
+    const mv = monthValue(getOffset());
+    const { data: acts } = await supabase.from('hoi_hoatdong').select('*').eq('donvi_id', donvi.id).eq('thang', mv.key).order('tao_luc');
+    FIELDS.forEach(f=>{
+      const rows = (acts||[]).filter(a=>a.category===f[0]);
+      const catScore = rows.reduce((s,r)=>s+r.diem,0);
+      const scoreEl = document.getElementById(`${idPrefix}score_${f[0]}`);
+      scoreEl.textContent = `${catScore} điểm`;
+      scoreEl.className = 'cat-score' + (catScore===0?' zero':'');
+      document.getElementById(`${idPrefix}list_${f[0]}`).innerHTML = rows.map(r=>`
+        <li data-id="${r.id}">
+          <span class="txt">${escapeHtml(r.noi_dung)}${r.gia_tri!=null ? ` <span class="val-tag">(${fmtNum(r.gia_tri)} ${escapeHtml(r.don_vi_tinh||'')})</span>` : ''}</span>
+          <div class="actions">
+            <button class="edit-btn" data-id="${r.id}" title="Sửa">✏️</button>
+            <button class="del" data-id="${r.id}" title="Xóa">✕</button>
+          </div>
+        </li>`).join('');
+    });
+    bindRowHandlers();
+  }
+
+  function bindRowHandlers(){
+    container.querySelectorAll('.add-btn').forEach(btn=>{
+      btn.onclick = async ()=>{
+        const cat = btn.dataset.cat;
+        const input = document.getElementById(`${idPrefix}input_${cat}`);
+        const val = input.value.trim();
+        if(!val) return;
+        const numEl = document.getElementById(`${idPrefix}value_${cat}`);
+        const unitEl = document.getElementById(`${idPrefix}unit_${cat}`);
+        const giaTri = numEl.value.trim()!=='' ? parseFloat(numEl.value) : null;
+        const donVi = giaTri!=null && unitEl.value.trim() ? unitEl.value.trim() : null;
+        btn.disabled = true;
+        const mv = monthValue(getOffset());
+        await supabase.from('hoi_hoatdong').insert({ donvi_id: donvi.id, thang: mv.key, category: cat, noi_dung: val, diem: 1, gia_tri: giaTri, don_vi_tinh: donVi });
+        input.value = ''; numEl.value=''; unitEl.value='';
+        document.getElementById(`${idPrefix}valuerow_${cat}`).classList.remove('open');
+        btn.disabled = false;
+        await loadInto();
+        if(onAfterChange) onAfterChange();
+      };
+      const inp = document.getElementById(`${idPrefix}input_${btn.dataset.cat}`);
+      inp.onkeydown = (e)=>{ if(e.key==='Enter'){ e.preventDefault(); btn.click(); } };
+    });
+    container.querySelectorAll('.del').forEach(btn=>{
+      btn.onclick = async ()=>{
+        if(!confirm('Xóa việc này?')) return;
+        await supabase.from('hoi_hoatdong').delete().eq('id', btn.dataset.id);
+        await loadInto();
+        if(onAfterChange) onAfterChange();
+      };
+    });
+    container.querySelectorAll('.edit-btn').forEach(btn=>{
+      btn.onclick = async ()=>{
+        const li = container.querySelector(`li[data-id="${btn.dataset.id}"]`);
+        const { data: row } = await supabase.from('hoi_hoatdong').select('*').eq('id', btn.dataset.id).maybeSingle();
+        if(!row) return;
+        li.classList.add('editing');
+        li.innerHTML = `
+          <div style="flex:1">
+            <input type="text" class="edit-inline-input" value="${escapeHtml(row.noi_dung)}">
+            <div class="edit-value-row">
+              <input type="number" step="any" class="edit-num" placeholder="Số" value="${row.gia_tri!=null?row.gia_tri:''}">
+              <input type="text" class="edit-unit" placeholder="Đơn vị" list="unit-suggestions" value="${escapeHtml(row.don_vi_tinh||'')}">
+            </div>
+          </div>
+          <button class="save-edit-btn">Lưu</button>
+          <button class="cancel-edit-btn">Hủy</button>`;
+        const inp = li.querySelector('.edit-inline-input');
+        inp.focus();
+        const save = async ()=>{
+          const val = inp.value.trim();
+          if(!val) return;
+          const numV = li.querySelector('.edit-num').value.trim();
+          const unitV = li.querySelector('.edit-unit').value.trim();
+          await supabase.from('hoi_hoatdong').update({
+            noi_dung: val,
+            gia_tri: numV!==''? parseFloat(numV) : null,
+            don_vi_tinh: numV!=='' && unitV ? unitV : null
+          }).eq('id', btn.dataset.id);
+          await loadInto();
+          if(onAfterChange) onAfterChange();
+        };
+        li.querySelector('.save-edit-btn').onclick = save;
+        li.querySelector('.cancel-edit-btn').onclick = loadInto;
+      };
+    });
+  }
+
+  loadInto();
+  return { reload: loadInto };
+}
+
 function renderForm(donvi){
   let offset = 0;
-
   app.innerHTML = `
     <div class="hero">
       <img class="logo" src="${LOGO_SRC}" alt="Hội LHPN Việt Nam">
@@ -244,42 +398,20 @@ function renderForm(donvi){
       <button id="nextM">›</button>
     </div>
     <div id="catCards"></div>
-    <div class="save-bar">Mỗi việc đã làm bấm <b>+ Thêm</b> là được tính <b>1 điểm</b> ngay. Làm 2-3 việc cùng nội dung thì thêm 2-3 lần.</div>
+    <div class="save-bar">Mỗi việc đã làm bấm <b>+ Thêm</b> là được tính <b>1 điểm</b>. Có giá trị/số tiền cụ thể thì bấm "+ Giá trị" để ghi thêm.</div>
   `;
-  document.getElementById('catCards').innerHTML = FIELDS.map((f,i)=>`
-    <div class="cat-card" data-cat="${f[0]}">
-      <div class="cat-head">
-        <div class="cat-num">${String(i+1).padStart(2,'0')}</div>
-        <div class="cat-label">${f[1]}</div>
-        <div class="cat-score zero" id="score_${f[0]}">0 điểm</div>
-      </div>
-      <ul class="activity-list" id="list_${f[0]}"></ul>
-      <div class="add-row">
-        <input type="text" id="input_${f[0]}" placeholder="VD: đã tổ chức 1 buổi tuyên truyền tại thôn…">
-        <button data-cat="${f[0]}" class="add-btn">+ Thêm</button>
-      </div>
-    </div>`).join('');
-
+  const container = document.getElementById('catCards');
   const monthLabel = document.getElementById('monthLabel');
   const prevM = document.getElementById('prevM');
   const nextM = document.getElementById('nextM');
 
-  async function loadMonth(){
+  async function refreshMeta(){
     const mv = monthValue(offset);
     monthLabel.textContent = `Tháng ${mv.m} · ${mv.y}`;
     nextM.disabled = offset >= 0;
 
-    const { data: acts } = await supabase.from('hoi_hoatdong').select('*').eq('donvi_id', donvi.id).eq('thang', mv.key).order('tao_luc');
-    let total = 0;
-    FIELDS.forEach(f=>{
-      const rows = (acts||[]).filter(a=>a.category===f[0]);
-      const catScore = rows.reduce((s,r)=>s+r.diem,0);
-      total += catScore;
-      document.getElementById(`score_${f[0]}`).textContent = `${catScore} điểm`;
-      document.getElementById(`score_${f[0]}`).className = 'cat-score' + (catScore===0?' zero':'');
-      document.getElementById(`list_${f[0]}`).innerHTML = rows.map(r=>`
-        <li data-id="${r.id}"><span class="txt">${escapeHtml(r.noi_dung)}</span><div class="actions"><button class="edit-btn" data-id="${r.id}" data-cat="${f[0]}" title="Sửa">✏️</button><button class="del" data-id="${r.id}" data-cat="${f[0]}" title="Xóa">✕</button></div></li>`).join('');
-    });
+    const { data: acts } = await supabase.from('hoi_hoatdong').select('diem').eq('donvi_id', donvi.id).eq('thang', mv.key);
+    const total = (acts||[]).reduce((s,a)=>s+a.diem,0);
     document.getElementById('totalScore').textContent = total;
 
     const { sorted } = await computeRanking(mv);
@@ -293,104 +425,62 @@ function renderForm(donvi){
       const isXuatSac = sorted[idx].score > 0 && sorted[idx].score >= threshold && xsCount>0;
       rankLbl.innerHTML = isXuatSac ? `<span class="badge-xs">★ Xuất sắc</span>` : 'Xếp hạng tháng';
     }
-
-    bindHandlers();
   }
-
-  function bindHandlers(){
-    document.querySelectorAll('.add-btn').forEach(btn=>{
-      btn.onclick = async ()=>{
-        const cat = btn.dataset.cat;
-        const input = document.getElementById(`input_${cat}`);
-        const val = input.value.trim();
-        if(!val) return;
-        btn.disabled = true;
-        const mv = monthValue(offset);
-        await supabase.from('hoi_hoatdong').insert({ donvi_id: donvi.id, thang: mv.key, category: cat, noi_dung: val, diem: 1 });
-        input.value = '';
-        btn.disabled = false;
-        loadMonth();
-      };
-      const inp = document.getElementById(`input_${btn.dataset.cat}`);
-      inp.onkeydown = (e)=>{ if(e.key==='Enter'){ e.preventDefault(); btn.click(); } };
-    });
-    document.querySelectorAll('.del').forEach(btn=>{
-      btn.onclick = async ()=>{
-        if(!confirm('Xóa việc này?')) return;
-        await supabase.from('hoi_hoatdong').delete().eq('id', btn.dataset.id);
-        loadMonth();
-      };
-    });
-    document.querySelectorAll('.edit-btn').forEach(btn=>{
-      btn.onclick = ()=>{
-        const li = document.querySelector(`li[data-id="${btn.dataset.id}"]`);
-        const currentText = li.querySelector('.txt').textContent;
-        li.classList.add('editing');
-        li.innerHTML = `
-          <input type="text" class="edit-inline-input" value="${escapeHtml(currentText)}">
-          <button class="save-edit-btn">Lưu</button>
-          <button class="cancel-edit-btn">Hủy</button>`;
-        const inp = li.querySelector('.edit-inline-input');
-        inp.focus();
-        const save = async ()=>{
-          const val = inp.value.trim();
-          if(!val) return;
-          await supabase.from('hoi_hoatdong').update({ noi_dung: val }).eq('id', btn.dataset.id);
-          loadMonth();
-        };
-        li.querySelector('.save-edit-btn').onclick = save;
-        li.querySelector('.cancel-edit-btn').onclick = ()=> loadMonth();
-        inp.onkeydown = (e)=>{ if(e.key==='Enter'){ e.preventDefault(); save(); } if(e.key==='Escape'){ loadMonth(); } };
-      };
-    });
+  async function reloadAll(){
+    mountEntryCards(container, donvi, '', ()=>offset, refreshMeta);
+    await refreshMeta();
   }
-
-  prevM.addEventListener('click', ()=>{ offset -= 1; loadMonth(); });
-  nextM.addEventListener('click', ()=>{ if(offset<0){ offset += 1; loadMonth(); } });
-
-  loadMonth();
+  prevM.addEventListener('click', ()=>{ offset -= 1; reloadAll(); });
+  nextM.addEventListener('click', ()=>{ if(offset<0){ offset += 1; reloadAll(); } });
+  reloadAll();
 }
 
-async function renderXaSummary(donvi){
+/* ============ Trang Hội LHPN xã: tổng hợp 16 chi hội + mục nhập riêng của xã ============ */
+async function renderXaPage(donvi){
   let offset = 0;
   app.innerHTML = `
     <div class="hero">
       <img class="logo" src="${LOGO_SRC}" alt="Hội LHPN Việt Nam">
       <div class="eyebrow">Hội LHPN xã Trung Giã</div>
       <h1>${donvi.ten_don_vi}</h1>
-      <p class="sub">Tổng hợp tự động từ 16 chi hội thôn</p>
+      <p class="sub">Tổng hợp tự động từ 16 chi hội + việc làm riêng của xã</p>
     </div>
     <div class="stat-row">
-      <div class="stat-card"><div class="num" id="totalScore">–</div><div class="lbl">Tổng điểm 16 chi hội</div></div>
+      <div class="stat-card"><div class="num" id="totalScore">–</div><div class="lbl">Tổng điểm (16 chi hội + xã)</div></div>
     </div>
     <div class="month-nav">
       <button id="prevM">‹</button>
       <div class="month-label" id="monthLabel">—</div>
       <button id="nextM">›</button>
     </div>
-    <div class="xa-note">Đây là số liệu <b>tự động cộng dồn</b> từ 16 chi hội thôn — không cần nhập tay ở đây. Muốn xem chi tiết đầy đủ và xuất Excel, vào trang quản trị (admin.html).</div>
-    <div id="catCards"></div>
-    <div class="save-bar">Trang chỉ để xem — việc nhập liệu do từng chi hội thôn tự thực hiện.</div>
+
+    <div class="section-title">Tổng hợp từ 16 chi hội <span class="tag">chỉ xem</span></div>
+    <div class="xa-note">Số liệu tự động cộng dồn từ 16 chi hội thôn — không sửa được ở đây.</div>
+    <div id="aggCards"></div>
+
+    <div class="section-title">Việc làm riêng của Hội LHPN xã <span class="tag">tự nhập</span></div>
+    <div class="xa-note">Ghi những việc chỉ cấp xã làm (chi hội thôn không làm) — VD: làm việc với UBND xã, tổ chức hội nghị cấp xã…</div>
+    <div id="ownCards"></div>
+    <div class="save-bar">Phần "Tổng hợp 16 chi hội" chỉ xem. Phần "Việc riêng của xã" bấm + Thêm để nhập như chi hội.</div>
   `;
-  document.getElementById('catCards').innerHTML = FIELDS.map((f,i)=>`
+  const aggContainer = document.getElementById('aggCards');
+  const monthLabel = document.getElementById('monthLabel');
+  const prevM = document.getElementById('prevM');
+  const nextM = document.getElementById('nextM');
+
+  aggContainer.innerHTML = FIELDS.map((f,i)=>`
     <div class="cat-card">
       <div class="cat-head">
         <div class="cat-num">${String(i+1).padStart(2,'0')}</div>
         <div class="cat-label">${f[1]}</div>
         <div class="cat-score zero" id="score_${f[0]}">0 điểm</div>
       </div>
+      <div class="val-sum" id="valsum_${f[0]}"></div>
       <ul class="activity-list" id="list_${f[0]}"></ul>
     </div>`).join('');
 
-  const monthLabel = document.getElementById('monthLabel');
-  const prevM = document.getElementById('prevM');
-  const nextM = document.getElementById('nextM');
-
-  async function loadMonth(){
+  async function loadAgg(){
     const mv = monthValue(offset);
-    monthLabel.textContent = `Tháng ${mv.m} · ${mv.y}`;
-    nextM.disabled = offset >= 0;
-
     const { data: chihoi } = await supabase.from('hoi_donvi').select('id, ten_don_vi').eq('is_xa', false);
     const nameMap = {}; (chihoi||[]).forEach(d=> nameMap[d.id]=d.ten_don_vi);
     const { data: acts } = await supabase.from('hoi_hoatdong').select('*').eq('thang', mv.key).in('donvi_id', (chihoi||[]).map(d=>d.id));
@@ -400,17 +490,38 @@ async function renderXaSummary(donvi){
       const rows = (acts||[]).filter(a=>a.category===f[0]);
       const catScore = rows.reduce((s,r)=>s+r.diem,0);
       total += catScore;
-      document.getElementById(`score_${f[0]}`).textContent = `${catScore} điểm`;
-      document.getElementById(`score_${f[0]}`).className = 'cat-score' + (catScore===0?' zero':'');
+      const scoreEl = document.getElementById(`score_${f[0]}`);
+      scoreEl.textContent = `${catScore} điểm`;
+      scoreEl.className = 'cat-score' + (catScore===0?' zero':'');
       document.getElementById(`list_${f[0]}`).innerHTML = rows.map(r=>`
-        <li><span class="xa-item-src">[${escapeHtml(nameMap[r.donvi_id]||'?')}]</span><span class="txt">${escapeHtml(r.noi_dung)}</span></li>`).join('');
+        <li><span class="xa-item-src">[${escapeHtml(nameMap[r.donvi_id]||'?')}]</span><span class="txt">${escapeHtml(r.noi_dung)}${r.gia_tri!=null ? ` <span class="val-tag">(${fmtNum(r.gia_tri)} ${escapeHtml(r.don_vi_tinh||'')})</span>` : ''}</span></li>`).join('');
+
+      const sums = {};
+      rows.forEach(r=>{ if(r.gia_tri!=null && r.don_vi_tinh){ sums[r.don_vi_tinh] = (sums[r.don_vi_tinh]||0) + Number(r.gia_tri); } });
+      const sumTxt = Object.entries(sums).map(([u,v])=>`Tổng: ${fmtNum(v)} ${u}`).join(' · ');
+      document.getElementById(`valsum_${f[0]}`).textContent = sumTxt;
     });
-    document.getElementById('totalScore').textContent = total;
+    return total;
   }
 
-  prevM.addEventListener('click', ()=>{ offset -= 1; loadMonth(); });
-  nextM.addEventListener('click', ()=>{ if(offset<0){ offset += 1; loadMonth(); } });
-  loadMonth();
+  async function refreshTotal(){
+    const aggTotal = await loadAgg();
+    const mv = monthValue(offset);
+    const { data: ownActs } = await supabase.from('hoi_hoatdong').select('diem').eq('donvi_id', donvi.id).eq('thang', mv.key);
+    const ownTotal = (ownActs||[]).reduce((s,a)=>s+a.diem,0);
+    document.getElementById('totalScore').textContent = aggTotal + ownTotal;
+  }
+
+  async function reloadAll(){
+    const mv = monthValue(offset);
+    monthLabel.textContent = `Tháng ${mv.m} · ${mv.y}`;
+    nextM.disabled = offset >= 0;
+    mountEntryCards(document.getElementById('ownCards'), donvi, 'own', ()=>offset, refreshTotal);
+    await refreshTotal();
+  }
+  prevM.addEventListener('click', ()=>{ offset -= 1; reloadAll(); });
+  nextM.addEventListener('click', ()=>{ if(offset<0){ offset += 1; reloadAll(); } });
+  reloadAll();
 }
 </script>
 </body>
