@@ -100,6 +100,7 @@
   .annual-table td, .annual-table th{text-align:center;}
   .annual-table td:nth-child(2), .annual-table th:nth-child(2){text-align:left;}
   .annual-total{font-weight:700; color:var(--blue-deep);}
+  .btn-unit-year{background:var(--blue-deep); color:var(--white); border:none; border-radius:8px; padding:5px 12px; font-size:11.5px; font-weight:700; cursor:pointer; white-space:nowrap;}
   .month-cell-xs{font-size:10px; color:var(--gold-deep);}
 
   .loading{padding:70px 24px; text-align:center; color:var(--ink-soft); font-size:14px;}
@@ -319,7 +320,7 @@ async function init(){
 
   const { data: setting } = await supabase.from('hoi_settings').select('value').eq('key','xuatsac_count').maybeSingle();
   const xsInput = document.getElementById('xsCount');
-  xsInput.value = setting ? setting.value : Math.round(chihoiList.length*0.2);
+  xsInput.value = setting ? setting.value : 5;
   document.getElementById('xsHint').textContent = `(chị Hà chọn số đơn vị xuất sắc mỗi tháng, mặc định 4)`;
   xsInput.addEventListener('change', async ()=>{
     await supabase.from('hoi_settings').upsert({ key:'xuatsac_count', value:String(xsInput.value) });
@@ -375,7 +376,7 @@ function renderMonthTable(mv, acts){
         <td><span class="cell-who">${r.d.ten_truong||'—'}</span></td>
         <td><span class="score-pill ${r.score===0?'zero':''}">${r.score} điểm</span></td>
         <td>${r.cnt}</td>
-        <td>${isXs?'<span class="star">★ Xuất sắc</span>':''} <button class="btn-view" data-donvi="${r.d.id}">Xem</button></td>
+        <td>${isXs?'<span class="star">🏆 Xuất sắc</span>':''} <button class="btn-view" data-donvi="${r.d.id}">Xem</button></td>
       </tr>`;
   }).join('');
   document.getElementById('tbodyMonth').innerHTML = html;
@@ -497,11 +498,15 @@ function closeModal(){ document.getElementById('overlay').classList.remove('show
 
 const XCOL = {
   blueDeep:'FF0F6E92', blue:'FF1996C2', bluePale:'FFEAF6FB', blueSoft:'FFD3EEF4',
-  goldSoft:'FFF6E4BC', goldDeep:'FF8A6210', white:'FFFFFFFF', border:'FFBFE3EF'
+  goldSoft:'FFF6E4BC', goldDeep:'FF8A6210', white:'FFFFFFFF', border:'FF5A6B72'
 };
 function xThinBorder(colorHex){
   const side = { style:'thin', color:{argb:colorHex} };
   return { top:side, left:side, bottom:side, right:side };
+}
+function estimateWrappedLines(text, colWidthChars){
+  if(!text) return 1;
+  return text.split('\n').reduce((sum,line)=> sum + Math.max(1, Math.ceil((line.length||1)/colWidthChars)), 0);
 }
 function downloadXlsxBuffer(buf, filename){
   const blob = new Blob([buf], { type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
@@ -558,7 +563,8 @@ async function exportMonthExcel(){
     cell.fill = { type:'pattern', pattern:'solid', fgColor:{argb:XCOL.blue} };
     cell.border = xThinBorder(XCOL.border);
   });
-  headerRow.height = 48;
+  const headerMaxLines = Math.max(1, ...headers.map(h=> estimateWrappedLines(h, 22)));
+  headerRow.height = Math.max(30, headerMaxLines*16 + 8);
 
   function actText(a){ return `- ${a.noi_dung}${a.gia_tri!=null?` (${a.gia_tri} ${a.don_vi_tinh||''})`:''}`; }
 
@@ -566,8 +572,9 @@ async function exportMonthExcel(){
     const rowIdx = headerRowIdx + 1 + i;
     const isXs = xsCount>0 && r.score>0 && r.score>=threshold;
     const catTexts = FIELDS.map(f=> acts.filter(a=>a.donvi_id===r.d.id && a.category===f[0]).map(actText).join('\n'));
-    const maxLines = Math.max(1, ...catTexts.map(t=> t ? t.split('\n').length : 1));
-    const rowVals = [i+1, r.d.stt, r.d.ten_don_vi, r.d.ten_truong||'', ...catTexts, r.score, isXs?'★ Xuất sắc':''];
+    const CAT_COL_CHARS = 22;
+    const maxLines = Math.max(1, ...catTexts.map(t=> estimateWrappedLines(t, CAT_COL_CHARS)));
+    const rowVals = [i+1, r.d.stt, r.d.ten_don_vi, r.d.ten_truong||'', ...catTexts, r.score, isXs?'🏆 Xuất sắc':''];
     const row = ws.getRow(rowIdx);
     rowVals.forEach((v,idx)=>{
       const cell = row.getCell(idx+1);
@@ -580,7 +587,7 @@ async function exportMonthExcel(){
       if(isXs){ cell.fill = { type:'pattern', pattern:'solid', fgColor:{argb:XCOL.goldSoft} }; }
       else if(i%2===1){ cell.fill = { type:'pattern', pattern:'solid', fgColor:{argb:XCOL.bluePale} }; }
     });
-    row.height = Math.min(220, Math.max(18, maxLines*14));
+    row.height = Math.min(500, Math.max(20, maxLines*16 + 6));
   });
 
   // Dòng tổng của xã: tổng giá trị cùng đơn vị cộng dồn từ 16 chi hội + việc riêng của xã
@@ -594,21 +601,22 @@ async function exportMonthExcel(){
     cell.border = xThinBorder(XCOL.border);
   }
   ws.getCell(xaRowIdx,1).value = 'Hội LHPN xã (tổng 16 chi hội + việc riêng của xã)';
+  let xaMaxLines = 1;
   FIELDS.forEach((f,ci)=>{
     const chihoiActs = acts.filter(a=> chihoiList.some(d=>d.id===a.donvi_id) && a.category===f[0]);
     const sums = {};
     chihoiActs.forEach(a=>{ if(a.gia_tri!=null && a.don_vi_tinh){ sums[a.don_vi_tinh] = (sums[a.don_vi_tinh]||0) + Number(a.gia_tri); } });
     const sumTxt = Object.entries(sums).map(([u,v])=>`Tổng: ${v} ${u}`).join('\n');
-    if(sumTxt) ws.getCell(xaRowIdx, CAT_START+ci).value = sumTxt;
+    if(sumTxt){ ws.getCell(xaRowIdx, CAT_START+ci).value = sumTxt; xaMaxLines = Math.max(xaMaxLines, estimateWrappedLines(sumTxt, 22)); }
   });
   ws.getCell(xaRowIdx, COL_TOTAL).value = xaScore;
-  ws.getRow(xaRowIdx).height = 30;
+  ws.getRow(xaRowIdx).height = Math.min(200, Math.max(24, xaMaxLines*16 + 6));
 
   ws.getColumn(1).width = 7;
   ws.getColumn(2).width = 6;
   ws.getColumn(3).width = 24;
   ws.getColumn(4).width = 18;
-  for(let c=CAT_START;c<=CAT_END;c++) ws.getColumn(c).width = 15;
+  for(let c=CAT_START;c<=CAT_END;c++) ws.getColumn(c).width = 22;
   ws.getColumn(COL_TOTAL).width = 11;
   ws.getColumn(COL_TOTAL+1).width = 13;
   ws.views = [{ state:'frozen', xSplit:3, ySplit:headerRowIdx }];
@@ -619,7 +627,7 @@ async function exportMonthExcel(){
 
 async function loadYear(){
   const year = document.getElementById('yearSelect').value || new Date().getFullYear();
-  document.getElementById('tbodyYear').innerHTML = `<tr><td colspan="15"><div class="loading">Đang tải…</div></td></tr>`;
+  document.getElementById('tbodyYear').innerHTML = `<tr><td colspan="16"><div class="loading">Đang tải…</div></td></tr>`;
 
   const { data: acts } = await supabase.from('hoi_hoatdong').select('*').gte('thang', `${year}-01`).lte('thang', `${year}-12`);
   window.__yearActsCache = acts || [];
@@ -628,7 +636,7 @@ async function loadYear(){
 
 function renderYearTable(year, acts){
   const headRow = document.getElementById('yearHeadRow');
-  headRow.innerHTML = `<th>Stt</th><th>Tên đơn vị</th>${Array.from({length:12},(_,i)=>`<th>Th.${i+1}</th>`).join('')}<th>Tổng năm</th>`;
+  headRow.innerHTML = `<th>Stt</th><th>Tên đơn vị</th>${Array.from({length:12},(_,i)=>`<th>Th.${i+1}</th>`).join('')}<th>Tổng năm</th><th>Báo cáo riêng</th>`;
 
   const monthScores = (donviId) => Array.from({length:12},(_,i)=>{
     const key = `${year}-${String(i+1).padStart(2,'0')}`;
@@ -645,15 +653,20 @@ function renderYearTable(year, acts){
     html += `<tr style="background:var(--blue-soft); font-weight:700;">
       <td>–</td><td>${xaDonvi.ten_don_vi} (tổng 16 chi hội + việc riêng của xã)</td>
       ${xaMonths.map(m=>`<td>${m||''}</td>`).join('')}
-      <td class="annual-total">${xaMonths.reduce((a,b)=>a+b,0)}</td></tr>`;
+      <td class="annual-total">${xaMonths.reduce((a,b)=>a+b,0)}</td>
+      <td><button class="btn-unit-year" data-donvi="${xaDonvi.id}">Xuất</button></td></tr>`;
   }
   chihoiRows.sort((a,b)=> b.months.reduce((x,y)=>x+y,0) - a.months.reduce((x,y)=>x+y,0));
   chihoiRows.forEach(r=>{
     const total = r.months.reduce((a,b)=>a+b,0);
-    html += `<tr><td>${r.d.stt}</td><td>${r.d.ten_don_vi}</td>${r.months.map(m=>`<td>${m||''}</td>`).join('')}<td class="annual-total">${total}</td></tr>`;
+    html += `<tr><td>${r.d.stt}</td><td>${r.d.ten_don_vi}</td>${r.months.map(m=>`<td>${m||''}</td>`).join('')}<td class="annual-total">${total}</td><td><button class="btn-unit-year" data-donvi="${r.d.id}">Xuất</button></td></tr>`;
   });
   document.getElementById('tbodyYear').innerHTML = html;
   drawYearChart(year, xaMonths);
+
+  document.querySelectorAll('.btn-unit-year').forEach(btn=>{
+    btn.addEventListener('click', ()=> exportUnitYearWord(btn.dataset.donvi, year, acts));
+  });
 }
 
 function drawYearChart(year, xaMonths){
@@ -894,24 +907,19 @@ async function exportMonthWord(){
       <td>${escapeHtml(r.d.ten_truong||'—')}</td>
       <td class="num">${r.score}</td>
       <td class="num">${r.cnt}</td>
-      <td class="num">${isXs?'<span class="star">Xuất sắc</span>':''}</td>
+      <td class="num">${isXs?'<span class="star">🏆 Xuất sắc</span>':''}</td>
     </tr>`;
   }).join('');
 
   const chiTietTheoNoiDung = FIELDS.map((f,fi)=>{
     const catActs = acts.filter(a=>a.category===f[0]);
-    if(!catActs.length) return `<p><b>${fi+1}. ${escapeHtml(f[1])}:</b> <i>Không có hoạt động trong tháng.</i></p>`;
-    const byDonvi = {};
-    catActs.forEach(a=>{ (byDonvi[a.donvi_id] = byDonvi[a.donvi_id]||[]).push(a); });
-    const items = Object.entries(byDonvi).map(([donviId, list])=>{
-      const dv = donviList.find(x=>x.id===donviId);
-      const name = dv ? dv.ten_don_vi : '?';
-      return list.map(a=> `<li><b>${escapeHtml(name)}</b>: ${escapeHtml(a.noi_dung)}${a.gia_tri!=null?` <i>(${a.gia_tri} ${escapeHtml(a.don_vi_tinh||'')})</i>`:''}</li>`).join('');
-    }).join('');
+    if(!catActs.length) return `<p><b>${fi+1}. ${escapeHtml(f[1])}:</b> Không có hoạt động trong tháng.</p>`;
+    const donviIds = [...new Set(catActs.map(a=>a.donvi_id))];
+    const names = donviIds.map(id=> escapeHtml(donviList.find(d=>d.id===id)?.ten_don_vi || '?'));
     const sums = {};
     catActs.forEach(a=>{ if(a.gia_tri!=null && a.don_vi_tinh){ sums[a.don_vi_tinh] = (sums[a.don_vi_tinh]||0) + Number(a.gia_tri); } });
-    const sumLine = Object.entries(sums).map(([u,v])=>`Tổng cộng: <b>${v} ${escapeHtml(u)}</b>`).join(' · ');
-    return `<p><b>${fi+1}. ${escapeHtml(f[1])}</b></p><ul>${items}</ul>${sumLine?`<p style="margin-left:18px; font-style:italic;">${sumLine}</p>`:''}`;
+    const sumTxt = Object.entries(sums).map(([u,v])=>`tổng cộng <b>${v} ${escapeHtml(u)}</b>`).join(', ');
+    return `<p><b>${fi+1}. ${escapeHtml(f[1])}:</b> Trong tháng có <b>${donviIds.length} chi hội</b> tham gia (${names.join(', ')})${sumTxt?`, ${sumTxt}`:''}.</p>`;
   }).join('');
 
   const body = `
@@ -938,7 +946,7 @@ async function exportMonthWord(){
     <h2 class="sec">III. Danh sách chi hội đạt xuất sắc</h2>
     ${xuatsacRows.length ? `<p>${xuatsacRows.map(r=>`${escapeHtml(r.d.ten_don_vi)} (${r.score} điểm)`).join('; ')}.</p>` : '<p><i>Chưa có đơn vị đạt xuất sắc trong tháng này.</i></p>'}
 
-    <h2 class="sec">IV. Chi tiết hoạt động theo từng nội dung (toàn xã)</h2>
+    <h2 class="sec">IV. Tổng hợp hoạt động theo từng nội dung (toàn xã)</h2>
     ${chiTietTheoNoiDung}
 
     <h2 class="sec">V. Phân tích, nhận xét (tự động theo số liệu)</h2>
@@ -1039,6 +1047,80 @@ function exportYearWord(){
     </div>
   `;
   downloadWordFile(`BaoCaoTongHop_Nam${year}.doc`, body);
+}
+
+/* Báo cáo tổng kết năm riêng cho 1 đơn vị (chi hội hoặc xã) */
+function exportUnitYearWord(donviId, year, acts){
+  const d = donviList.find(x=>x.id===donviId);
+  if(!d) return;
+  const isXa = d.is_xa;
+  const unitActs = isXa ? acts.filter(a=>a.donvi_id===donviId) : acts.filter(a=>a.donvi_id===donviId);
+  const months = Array.from({length:12},(_,i)=>{
+    const key = `${year}-${String(i+1).padStart(2,'0')}`;
+    const list = unitActs.filter(a=>a.thang===key);
+    return { m:i+1, score: list.reduce((s,a)=>s+a.diem,0), cnt: list.length };
+  });
+  const total = months.reduce((s,m)=>s+m.score,0);
+
+  // Xác định tháng nào đơn vị này đạt xuất sắc (so với các chi hội khác cùng tháng đó)
+  const xuatSacThangs = [];
+  if(!isXa){
+    for(let mIdx=0; mIdx<12; mIdx++){
+      const key = `${year}-${String(mIdx+1).padStart(2,'0')}`;
+      const monthActs = acts.filter(a=>a.thang===key);
+      const scores = chihoiList.map(cd=> monthActs.filter(a=>a.donvi_id===cd.id).reduce((s,a)=>s+a.diem,0)).sort((a,b)=>b-a);
+      const xsCountVal = parseInt(document.getElementById('xsCount').value,10) || 5;
+      const threshold = scores.length ? scores[Math.min(xsCountVal,scores.length)-1] : -1;
+      const myScore = months[mIdx].score;
+      if(myScore>0 && myScore>=threshold && xsCountVal>0) xuatSacThangs.push(mIdx+1);
+    }
+  }
+
+  const tableRows = months.map(m=>`<tr><td class="num">Tháng ${m.m}</td><td class="num">${m.score}</td><td class="num">${m.cnt}</td><td class="num">${xuatSacThangs.includes(m.m)?'🏆':''}</td></tr>`).join('');
+
+  const chiTiet = FIELDS.map((f,fi)=>{
+    const rows = unitActs.filter(a=>a.category===f[0]);
+    if(!rows.length) return `<p><b>${fi+1}. ${escapeHtml(f[1])}:</b> Không có hoạt động trong năm.</p>`;
+    const items = rows.map(a=>`<li>[Th.${a.thang.slice(5,7).replace(/^0/,'')}] ${escapeHtml(a.noi_dung)}${a.gia_tri!=null?` <i>(${a.gia_tri} ${escapeHtml(a.don_vi_tinh||'')})</i>`:''}</li>`).join('');
+    const sums = {};
+    rows.forEach(a=>{ if(a.gia_tri!=null && a.don_vi_tinh){ sums[a.don_vi_tinh] = (sums[a.don_vi_tinh]||0) + Number(a.gia_tri); } });
+    const sumLine = Object.entries(sums).map(([u,v])=>`Tổng cộng cả năm: <b>${v} ${escapeHtml(u)}</b>`).join(' · ');
+    return `<p><b>${fi+1}. ${escapeHtml(f[1])}</b></p><ul>${items}</ul>${sumLine?`<p style="margin-left:18px; font-style:italic;">${sumLine}</p>`:''}`;
+  }).join('');
+
+  const body = `
+    <p class="quochieu">CỘNG HÒA XÃ HỘI CHỦ NGHĨA VIỆT NAM</p>
+    <p class="tieungu">Độc lập - Tự do - Hạnh phúc<span class="tieungu-line"></span></p>
+    <p class="org" style="margin-top:22px;">HỘI LHPN XÃ TRUNG GIÃ</p>
+    <p class="org-sub">Số: ......../BC-HLHPN</p>
+    <p class="date-line">${vnDateLine()}</p>
+    <h1 class="title">BÁO CÁO TỔNG KẾT NĂM</h1>
+    <p class="subtitle">Kết quả hoạt động năm ${year} của ${escapeHtml(d.ten_don_vi)}</p>
+
+    <h2 class="sec">I. Kết quả theo tháng</h2>
+    <table>
+      <tr><th>Tháng</th><th>Điểm</th><th>Số việc đã làm</th><th>Xuất sắc</th></tr>
+      ${tableRows}
+      <tr style="background:#DCEEF5;"><td><b>Tổng năm</b></td><td class="num"><b>${total}</b></td><td class="num"><b>${months.reduce((s,m)=>s+m.cnt,0)}</b></td><td></td></tr>
+    </table>
+    ${!isXa ? `<p>- Số tháng đạt xuất sắc trong năm: <b>${xuatSacThangs.length}/12 tháng</b>${xuatSacThangs.length?` (Tháng ${xuatSacThangs.join(', ')})`:''}.</p>` : ''}
+
+    <h2 class="sec">II. Chi tiết hoạt động cả năm theo từng nội dung</h2>
+    ${chiTiet}
+
+    <div class="sign-wrap">
+      <div class="sign-right">
+        <p class="role">TM. BAN THƯỜNG VỤ HỘI LHPN XÃ<br>CHỦ TỊCH</p>
+        <p class="sign-note">(Ký, ghi rõ họ tên)</p>
+      </div>
+      <div class="receiver">
+        Nơi nhận:<br>- ${escapeHtml(d.ten_don_vi)} (để lưu);<br>- Lưu VT.
+      </div>
+      <div class="clear"></div>
+    </div>
+  `;
+  const safeSlug = (d.slug||d.ten_don_vi).replace(/[^a-z0-9-]/gi,'_');
+  downloadWordFile(`BaoCaoNam_${year}_${safeSlug}.doc`, body);
 }
 </script>
 </body>
